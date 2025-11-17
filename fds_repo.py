@@ -159,23 +159,28 @@ def create_features(data: list[dict]) -> pd.DataFrame:
 BASIC_STATS = ["hp","atk","def","spa","spd","spe"]
 
 def build_features(battles):
-    rows = []
+    """create basic feature rows for each battle using P1 team stats.
+    returns a list of dictionaries (can be converted to DataFrame later)"""
+    rows = [] # Stores final feature dictionaries
 
     for battle in battles:
-        features = {}
+        features = {} # Feature storage for this battle
 
+        # Get P1 team (empty list if missing)
         me_team = battle.get("p1_team_details", []) or []
         if me_team:
+            # build stats for each basic attribute (hp, atk, def, spa, spd, spe)
             for stat in BASIC_STATS:
                 values = [p.get(f"base_{stat}", 0) for p in me_team]
-                features[f"me_average_{stat}"] = float(np.mean(values))
-                features[f"me_total_{stat}"] = float(np.sum(values))
-                features[f"me_maximum_{stat}"] = float(np.max(values))
-
+                features[f"me_average_{stat}"] = float(np.mean(values)) # Team average
+                features[f"me_total_{stat}"] = float(np.sum(values)) # Team total
+                features[f"me_maximum_{stat}"] = float(np.max(values)) # Team max
+            # Count strong Pokemon
             features["me_fast_pokemon_count"] = int(sum(p.get("base_spe",0) >= 100 for p in me_team))
             features["me_high_hp_pokemon_count"] = int(sum(p.get("base_hp",0) >= 90 for p in me_team))
             features["me_high_special_attack_pokemon_count"] = int(sum(p.get("base_spa",0) >= 110 for p in me_team))
         else:
+            #fill wvweything with 0
             for stat in BASIC_STATS:
                 for agg in ["average","total","maximum"]:
                     features[f"me_{agg}_{stat}"] = 0.0
@@ -183,23 +188,30 @@ def build_features(battles):
             features["me_high_hp_pokemon_count"] = 0
             features["me_high_special_attack_pokemon_count"] = 0
 
+       # get opponent lead Pokemon (P2). Use {} if key missing or None
         opponent_lead = battle.get("p2_lead_details", {}) or {}
-        for stat in BASIC_STATS:
+      
+        for stat in BASIC_STATS: # Extract opponent lead base stats for all BASIC_STATS
             features[f"opponent_{stat}"] = float(opponent_lead.get(f"base_{stat}", 0))
-
+            
+        # Compute difference between my average stats and opponent lead stats
         for stat in BASIC_STATS:
             features[f"average_{stat}_difference"] = (features.get(f"me_average_{stat}", 0.0) - features.get(f"opponent_{stat}", 0.0))
-
+        # Take at most the first 30 turns from the battle timeline
         timeline = (battle.get("battle_timeline", []) or [])[:30]
 
+         # Initialize damage and move counters
         me_total_damage_done = 0.0
         opponent_total_damage_done = 0.0
         me_attack_move_count = me_status_move_count = 0
         opponent_attack_move_count = opponent_status_move_count = 0
+       # HP series for both players across the timeline
         me_hp_series, opponent_hp_series = [], []
+       # Previous HP values to estimate damage per turn
         previous_me_hp = previous_opponent_hp = None
 
         for event in timeline:
+            # Pokemon state dicts for both players at this turn
             me_state = event.get("p1_pokemon_state", {}) or {}
             opponent_state = event.get("p2_pokemon_state", {}) or {}
 
@@ -421,6 +433,8 @@ def summarize_timeline_30(battle, max_turns=30):
     return out
 
 def build_enhanced_features(battles, TYPE_EFF):
+    """Build detailed battle features using team stats, opponent stats,
+    timeline info, and type effectiveness."""
     rows = []
 
     for b in battles:
@@ -428,14 +442,20 @@ def build_enhanced_features(battles, TYPE_EFF):
 
         me_team = b.get("p1_team_details", []) or []
 
-        if me_team:
-            for stat in BASIC_STATS:
+        if me_team: # For each basic stat (hp, atk, def, spa, spd, spe)
+            for stat in BASIC_STATS: # Extract this stat for all Pokémon in my team, defaulting to 0
                 vals = [p.get(f"base_{stat}", 0) for p in me_team]
+                # Average stat value across my team
                 f[f"me_average_{stat}"] = float(np.mean(vals))
+                # Total stat value across my team
                 f[f"me_total_{stat}"]   = float(np.sum(vals))
+                # Maximum stat value on my team
                 f[f"me_maximum_{stat}"] = float(np.max(vals))
+            # Count team members with Speed >= 100 
             f["me_fast_pokemon_count"]              = int(sum(p.get("base_spe",0) >= 100 for p in me_team))
+            # Count team members with HP >= 90
             f["me_high_hp_pokemon_count"]           = int(sum(p.get("base_hp",0)  >=  90 for p in me_team))
+            # Count team members with SpA >= 110
             f["me_high_special_attack_pokemon_count"]= int(sum(p.get("base_spa",0) >= 110 for p in me_team))
         else:
             for stat in BASIC_STATS:
